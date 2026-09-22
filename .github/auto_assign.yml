@@ -1,0 +1,17 @@
+# Set to true to add assignees to pull requests / issues
+addAssignees: true
+
+# Set to true to add reviewers to pull requests
+addReviewers: false
+
+# List of GitHub usernames to assign (add your GitHub username and collaborators)
+assignees:
+  - alaa.galal.abas1
+
+# Number of assignees to be chosen from the list above
+numOfAssignee: 1
+
+# Optional: PR titles containing these keywords will be skipped
+skipKeywords:
+  - "[WIP]"
+  - "[DRAFT]"
