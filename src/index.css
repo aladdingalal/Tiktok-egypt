@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Cairo', 'Outfit', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom scrollbar hiding */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 15-grid for Ludo */
+.grid-cols-15 {
+  grid-template-columns: repeat(15, minmax(0, 1fr));
+}
+.grid-rows-15 {
+  grid-template-rows: repeat(15, minmax(0, 1fr));
+}
+
+/* Floating animation for TikTok likes */
+@keyframes floatUp {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate(-10px, -60px) scale(1.2) rotate(-15deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(15px, -120px) scale(1.4) rotate(15deg);
+  }
+}
+
+.animate-float-up {
+  animation: floatUp 1.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}

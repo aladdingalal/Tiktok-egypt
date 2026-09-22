@@ -1,0 +1,6 @@
+{
+  "name": "TikTok Live 3D Games - Ludo, Domino, Tawla & Uno",
+  "description": "Interactive 3D TikTok Live board game collection featuring Ludo, Dominoes, Backgammon (Tawla), and Uno with multiplayer, live stream mode, and multi-language support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
