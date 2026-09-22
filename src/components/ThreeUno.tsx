@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UnoCard, UnoColor, UnoValue, SupportedLanguage } from '../types';
 import { sound } from '../utils/sound';
 import { translations } from '../utils/translations';
 import confetti from 'canvas-confetti';
-import { RotateCw, Trophy, Bell, AlertTriangle } from 'lucide-react';
+import { RotateCw, Trophy, Bell, AlertTriangle, Flame, Sparkles } from 'lucide-react';
 
 interface ThreeUnoProps {
   lang: SupportedLanguage;
@@ -28,10 +28,8 @@ function createUnoDeck(): UnoCard[] {
   let id = 0;
 
   COLORS.forEach((color) => {
-    // One '0' per color
     deck.push({ id: `card-${id++}`, color, value: '0' });
 
-    // Two '1'-'9' and actions
     const values: UnoValue[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', 'draw2'];
     values.forEach((val) => {
       deck.push({ id: `card-${id++}`, color, value: val });
@@ -39,7 +37,6 @@ function createUnoDeck(): UnoCard[] {
     });
   });
 
-  // 4 Wild and 4 Wild Draw 4
   for (let i = 0; i < 4; i++) {
     deck.push({ id: `card-${id++}`, color: 'wild', value: 'wild' });
     deck.push({ id: `card-${id++}`, color: 'wild', value: 'wild4' });
@@ -65,9 +62,10 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
   const [activeColor, setActiveColor] = useState<UnoColor>('red');
   const [showColorPicker, setShowColorPicker] = useState<boolean>(false);
   const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
-  const [shoutedUno, setShoutedUno] = useState<{ player: boolean; opponent: boolean }>({ player: false, opponent: false });
+  const [shoutedUno, setShoutedUno] = useState<boolean>(false);
   const [winner, setWinner] = useState<string | null>(null);
-  const [gameMessage, setGameMessage] = useState<string>('');
+  const [slamBanner, setSlamBanner] = useState<string | null>(null);
+  const [screenShake, setScreenShake] = useState<boolean>(false);
 
   // Start new Uno Game
   const startUnoGame = () => {
@@ -75,7 +73,6 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
     const p1 = fullDeck.slice(0, 7);
     const p2 = fullDeck.slice(7, 14);
 
-    // Initial discard card (find non-wild if possible)
     let firstCardIndex = 14;
     while (firstCardIndex < fullDeck.length && fullDeck[firstCardIndex].color === 'wild') {
       firstCardIndex++;
@@ -92,8 +89,8 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
     setWinner(null);
     setShowColorPicker(false);
     setPendingWildCard(null);
-    setShoutedUno({ player: false, opponent: false });
-    setGameMessage('بدأت اللعبة! طابق اللون أو الرقم.');
+    setShoutedUno(false);
+    setSlamBanner(null);
   };
 
   useEffect(() => {
@@ -101,6 +98,14 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
   }, []);
 
   const topDiscard = discardPile[discardPile.length - 1];
+
+  const triggerSlam = (msg: string) => {
+    sound.playDoubleSlam();
+    setScreenShake(true);
+    setSlamBanner(msg);
+    setTimeout(() => setScreenShake(false), 350);
+    setTimeout(() => setSlamBanner(null), 2500);
+  };
 
   // Check if a card is valid to play
   const isCardPlayable = (card: UnoCard): boolean => {
@@ -118,170 +123,174 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
     sound.playCardSwish();
 
     if (card.color === 'wild') {
+      sound.playMagicSwoosh();
       setPendingWildCard(card);
       setShowColorPicker(true);
       return;
     }
 
-    applyCardPlay(card, card.color);
+    executePlayerCardPlay(card, card.color);
   };
 
-  // Apply card effect and update turn
-  const applyCardPlay = (card: UnoCard, chosenColor: UnoColor) => {
-    const newHand = playerHand.filter((c) => c.id !== card.id);
-    setPlayerHand(newHand);
-    setDiscardPile((prev) => [...prev, card]);
-    setActiveColor(chosenColor);
+  const handleSelectWildColor = (chosenColor: UnoColor) => {
+    if (!pendingWildCard) return;
     setShowColorPicker(false);
+    executePlayerCardPlay(pendingWildCard, chosenColor);
     setPendingWildCard(null);
+  };
 
-    // Check Win
+  const executePlayerCardPlay = (card: UnoCard, resolvedColor: UnoColor) => {
+    const newHand = playerHand.filter((c) => c.id !== card.id);
+    const newDiscard = [...discardPile, card];
+
+    setPlayerHand(newHand);
+    setDiscardPile(newDiscard);
+    setActiveColor(resolvedColor);
+
+    // Uno alert check
+    if (newHand.length === 1 && !shoutedUno) {
+      sound.playUnoShout();
+      triggerSlam('باقي معك ورقة واحدة! اضغط صرخة أونووو! 🃏');
+    }
+
+    // Win check
     if (newHand.length === 0) {
       setWinner('player');
       sound.playFanfare();
-      confetti({ particleCount: 150 });
+      confetti({ particleCount: 200, spread: 80 });
       onVictory?.('player');
       return;
     }
 
-    // Uno shout check
-    if (newHand.length === 1 && !shoutedUno.player) {
-      sound.playUnoShout();
-      setGameMessage('⚠️ بطاقة واحدة متبقية! تذكر أن تصيح أونووو!');
-    }
-
     // Action cards logic
-    let nextTurnTarget: 'player' | 'opponent' = 'opponent';
+    let nextTurn: 'player' | 'opponent' = 'opponent';
 
     if (card.value === 'skip') {
-      setGameMessage('🚫 تم منع دور الخصم! العب مجدداً!');
-      nextTurnTarget = 'player';
+      triggerSlam('تجاوزت دور الخصم! العب مجدداً! 🚫');
+      nextTurn = 'player';
     } else if (card.value === 'reverse') {
-      setGameMessage('🔄 تم عكس الاتجاه! دورك مجدداً!');
-      nextTurnTarget = 'player';
+      triggerSlam('عكست الاتجاه! 🔄');
+      nextTurn = 'player';
     } else if (card.value === 'draw2') {
-      setGameMessage('📥 الخصم يسحب بطاقتين (+2)!');
-      // Draw 2 for opponent
-      drawCardsFor('opponent', 2);
-      nextTurnTarget = 'player'; // Skip opponent
+      triggerSlam('سحب الخصم ورقتين! +2 💥');
+      applyDrawPenalty('opponent', 2);
+      nextTurn = 'player';
     } else if (card.value === 'wild4') {
-      setGameMessage('💣 بطاقة +4 وتغيير لون! الخصم يسحب 4 بطاقات!');
-      drawCardsFor('opponent', 4);
-      nextTurnTarget = 'player';
+      triggerSlam('سحب الخصم 4 ورقات وغيرت اللون! +4 🚀');
+      applyDrawPenalty('opponent', 4);
+      nextTurn = 'player';
     }
 
-    setCurrentTurn(nextTurnTarget);
+    setCurrentTurn(nextTurn);
   };
 
-  // Helper to draw N cards
-  const drawCardsFor = (target: 'player' | 'opponent', count: number) => {
-    sound.playCardSwish();
-    setDeck((prevDeck) => {
-      let currentD = [...prevDeck];
-      if (currentD.length < count) {
-        // Reshuffle discard pile
-        currentD = [...currentD, ...createUnoDeck()];
-      }
-      const drawn = currentD.slice(0, count);
-      const remaining = currentD.slice(count);
+  const applyDrawPenalty = (target: 'player' | 'opponent', count: number) => {
+    let currentDeck = [...deck];
+    if (currentDeck.length < count) {
+      currentDeck = [...currentDeck, ...createUnoDeck()];
+    }
 
-      if (target === 'player') {
-        setPlayerHand((prev) => [...prev, ...drawn]);
-      } else {
-        setOpponentHand((prev) => [...prev, ...drawn]);
-      }
-      return remaining;
-    });
+    const drawn = currentDeck.slice(0, count);
+    const remDeck = currentDeck.slice(count);
+
+    setDeck(remDeck);
+    if (target === 'player') {
+      setPlayerHand((prev) => [...prev, ...drawn]);
+    } else {
+      setOpponentHand((prev) => [...prev, ...drawn]);
+    }
   };
 
-  // Player manual draw from deck
-  const handlePlayerDraw = () => {
+  // Draw card from deck
+  const handleDrawCard = () => {
     if (currentTurn !== 'player' || winner) return;
-    drawCardsFor('player', 1);
-    setGameMessage('سحبت بطاقة من المجموعة 🃏');
-    // Switch turn to opponent after drawing
-    setTimeout(() => {
-      setCurrentTurn('opponent');
-    }, 500);
-  };
 
-  // Shout UNO button
-  const handleShoutUno = () => {
-    if (playerHand.length <= 2) {
-      sound.playUnoShout();
-      setShoutedUno((prev) => ({ ...prev, player: true }));
-      setGameMessage('🔔 صرخت: أونوووو (UNO)!');
-      confetti({ particleCount: 50, spread: 60 });
+    sound.playCardSwish();
+    let currentDeck = [...deck];
+    if (currentDeck.length === 0) {
+      currentDeck = createUnoDeck();
     }
+
+    const drawn = currentDeck[0];
+    const rem = currentDeck.slice(1);
+
+    setDeck(rem);
+    setPlayerHand([...playerHand, drawn]);
+    setCurrentTurn('opponent');
   };
 
-  // AI Opponent Turn
+  // AI Opponent Move
   useEffect(() => {
     if (currentTurn !== 'opponent' || winner) return;
 
     const timer = setTimeout(() => {
-      // Find playable card in opponent hand
-      const playable = opponentHand.find(isCardPlayable);
+      const playableCard = opponentHand.find((c) => isCardPlayable(c));
 
-      if (playable) {
+      if (playableCard) {
         sound.playCardSwish();
-        const newOppHand = opponentHand.filter((c) => c.id !== playable.id);
-        setOpponentHand(newOppHand);
-        setDiscardPile((prev) => [...prev, playable]);
 
-        let chosenCol: UnoColor = playable.color;
-        if (playable.color === 'wild') {
-          // AI picks color it has the most of
+        let resolvedColor = playableCard.color;
+        if (playableCard.color === 'wild') {
+          sound.playMagicSwoosh();
+          // Pick most frequent color in AI hand
           const counts: Record<UnoColor, number> = { red: 0, blue: 0, green: 0, yellow: 0, wild: 0 };
-          newOppHand.forEach((c) => {
-            if (c.color !== 'wild') counts[c.color]++;
-          });
-          chosenCol = (Object.keys(counts) as UnoColor[]).filter(c => c !== 'wild').sort((a, b) => counts[b] - counts[a])[0] || 'red';
+          opponentHand.forEach((c) => counts[c.color]++);
+          resolvedColor = (['red', 'blue', 'green', 'yellow'] as UnoColor[]).sort(
+            (a, b) => counts[b] - counts[a]
+          )[0];
         }
 
-        setActiveColor(chosenCol);
+        const newHand = opponentHand.filter((c) => c.id !== playableCard.id);
+        const newDiscard = [...discardPile, playableCard];
 
-        if (newOppHand.length === 0) {
+        setOpponentHand(newHand);
+        setDiscardPile(newDiscard);
+        setActiveColor(resolvedColor);
+
+        if (newHand.length === 0) {
           setWinner('opponent');
+          sound.playDoubleSlam();
           return;
         }
 
-        if (newOppHand.length === 1) {
-          sound.playUnoShout();
-          setGameMessage('🔔 الخصم صرخ: أونووو!');
+        let nextTurn: 'player' | 'opponent' = 'player';
+
+        if (playableCard.value === 'skip') {
+          triggerSlam('الخصم تجاوز دورك! 🚫');
+          nextTurn = 'opponent';
+        } else if (playableCard.value === 'reverse') {
+          triggerSlam('الخصم عكس الاتجاه! 🔄');
+          nextTurn = 'opponent';
+        } else if (playableCard.value === 'draw2') {
+          triggerSlam('سحبت ورقتين بسبب الخصم! +2 💥');
+          applyDrawPenalty('player', 2);
+          nextTurn = 'opponent';
+        } else if (playableCard.value === 'wild4') {
+          triggerSlam('سحبت 4 ورقات بسبب بطاقة الخصم! +4 🚀');
+          applyDrawPenalty('player', 4);
+          nextTurn = 'opponent';
         }
 
-        let nextT: 'player' | 'opponent' = 'player';
-        if (playable.value === 'skip') {
-          setGameMessage('🚫 الخصم لعب منع! دور الخصم مجدداً');
-          nextT = 'opponent';
-        } else if (playable.value === 'reverse') {
-          setGameMessage('🔄 الخصم عكس الاتجاه!');
-          nextT = 'opponent';
-        } else if (playable.value === 'draw2') {
-          setGameMessage('📥 سحبت بطاقتين بسبب +2 من الخصم!');
-          drawCardsFor('player', 2);
-          nextT = 'opponent';
-        } else if (playable.value === 'wild4') {
-          setGameMessage('💣 الخصم لعب +4! سحبت 4 بطاقات!');
-          drawCardsFor('player', 4);
-          nextT = 'opponent';
-        }
-
-        setCurrentTurn(nextT);
+        setCurrentTurn(nextTurn);
       } else {
-        // AI draws from deck
-        drawCardsFor('opponent', 1);
-        setGameMessage('الخصم سحب بطاقة!');
+        // AI Draws
+        sound.playCardSwish();
+        let currentDeck = [...deck];
+        if (currentDeck.length === 0) {
+          currentDeck = createUnoDeck();
+        }
+        const drawn = currentDeck[0];
+        setDeck(currentDeck.slice(1));
+        setOpponentHand((prev) => [...prev, drawn]);
         setCurrentTurn('player');
       }
-    }, 1100);
+    }, 1000);
 
     return () => clearTimeout(timer);
-  }, [currentTurn, opponentHand, topDiscard, activeColor, winner]);
+  }, [currentTurn, opponentHand, discardPile, deck, winner, activeColor]);
 
-  // Card Value label renderer
-  const renderCardValue = (val: UnoValue) => {
+  // Card Value Visual Label
+  const getCardDisplayValue = (val: UnoValue) => {
     switch (val) {
       case 'skip':
         return '🚫';
@@ -290,7 +299,7 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
       case 'draw2':
         return '+2';
       case 'wild':
-        return '🌈';
+        return '★';
       case 'wild4':
         return '+4';
       default:
@@ -299,136 +308,178 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-between p-2 select-none overflow-hidden">
-      {/* Top Header Status */}
-      <div className="w-full flex items-center justify-between bg-slate-900/80 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700/60 shadow-lg z-10">
+    <div
+      className={`relative w-full h-full flex flex-col items-center justify-between p-2 select-none overflow-hidden transition-transform ${
+        screenShake ? 'scale-[1.02] translate-y-1 animate-pulse' : ''
+      }`}
+    >
+      {/* Top HUD */}
+      <div className="w-full flex items-center justify-between bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700/80 shadow-xl z-20">
         <div className="flex items-center gap-2">
           <div
-            className={`w-3.5 h-3.5 rounded-full ${
-              currentTurn === 'player' ? 'bg-amber-400 ring-2 ring-amber-300 animate-pulse' : 'bg-rose-500'
-            }`}
+            className={`w-3.5 h-3.5 rounded-full ${COLOR_MAP[activeColor].bg} ring-2 ring-white animate-pulse shadow-md`}
           />
-          <span className="text-xs sm:text-sm font-bold text-slate-200">
-            {currentTurn === 'player' ? t.yourTurn : t.aiTurn}
+          <span className="text-xs sm:text-sm font-black text-slate-100">
+            اللون الحالي: {t[activeColor as keyof typeof t] || activeColor}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-          <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
-            🃏 كروت الخصم: {opponentHand.length}
-          </span>
-          <span className="bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
-            📦 المتبقي: {deck.length}
-          </span>
+        {/* Opponent Cards Counter */}
+        <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1 rounded-xl border border-slate-800">
+          <span className="text-xs text-slate-400 font-bold">المنافس:</span>
+          <div className="flex gap-0.5">
+            {Array.from({ length: opponentHand.length }).map((_, i) => (
+              <div key={i} className="w-2.5 h-5 bg-gradient-to-b from-rose-700 to-indigo-800 rounded-xs border border-white/40 shadow-xs" />
+            ))}
+          </div>
+          <span className="text-xs font-black text-amber-300">({opponentHand.length})</span>
         </div>
 
         <button
           onClick={startUnoGame}
           id="btn-uno-restart"
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
           title={t.playAgain}
         >
           <RotateCw className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Opponent's Face-Down Cards Fan */}
-      <div className="flex items-center justify-center gap-1 my-1">
-        {opponentHand.map((_, idx) => (
-          <div
-            key={idx}
-            className="w-6 h-10 sm:w-8 sm:h-12 rounded-lg bg-gradient-to-br from-slate-900 via-rose-950 to-slate-900 border border-rose-500/50 shadow-md transform -rotate-1"
-          >
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="text-[10px] font-black text-rose-500">UNO</span>
-            </div>
+      {/* Action Banner */}
+      {slamBanner && (
+        <div className="absolute top-14 z-40 pointer-events-none animate-bounce">
+          <div className="bg-gradient-to-r from-rose-600 via-amber-500 to-sky-600 text-white font-black text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-2xl border-2 border-white flex items-center gap-2">
+            <Flame className="w-4 h-4 text-yellow-300 fill-current" />
+            <span>{slamBanner}</span>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {/* 3D Play Table / Discard & Deck Pile */}
+      {/* 3D Uno Stage */}
       <div
-        className={`relative w-full max-w-[420px] aspect-[4/3] bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-3xl p-4 border-4 border-slate-800 shadow-[0_20px_45px_rgba(0,0,0,0.85)] flex items-center justify-center gap-6 my-auto transition-transform duration-500 ${
-          is3DView ? 'rotate-x-[24deg] scale-[0.94] shadow-2xl' : ''
+        className={`relative w-full max-w-[420px] aspect-[4/3] my-auto transition-transform duration-700 ease-out flex items-center justify-center ${
+          is3DView
+            ? 'rotate-x-[26deg] rotate-z-[-1deg] scale-[0.95] drop-shadow-[0_30px_50px_rgba(0,0,0,0.95)]'
+            : ''
         }`}
         style={{ perspective: '1100px', transformStyle: 'preserve-3d' }}
       >
-        {/* Draw Deck (3D stacked pile) */}
-        <button
-          onClick={handlePlayerDraw}
-          id="btn-uno-draw-deck"
-          disabled={currentTurn !== 'player' || !!winner}
-          className={`relative group w-20 h-28 sm:w-24 sm:h-34 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-black border-2 border-slate-600 shadow-2xl flex flex-col items-center justify-center p-2 transition-all transform active:scale-95 ${
-            currentTurn === 'player' ? 'hover:-translate-y-2 ring-2 ring-amber-400/80 cursor-pointer' : 'cursor-not-allowed opacity-80'
-          }`}
-          style={{ transform: 'rotateY(10deg) translateZ(10px)' }}
-        >
-          <div className="w-full h-full rounded-xl border border-slate-700/80 bg-rose-600/20 flex flex-col items-center justify-center">
-            <span className="text-xl sm:text-2xl font-black text-amber-400 tracking-wider">
-              UNO
-            </span>
-            <span className="text-[10px] font-bold text-slate-300 mt-1">
-              اسحب 🃏
-            </span>
+        <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 p-4 rounded-3xl border-4 border-indigo-700/60 shadow-[0_0_40px_rgba(79,70,229,0.25)] flex items-center justify-around relative overflow-hidden">
+          {/* Deck Pile to Draw */}
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-[10px] font-black text-slate-300 uppercase tracking-wider">سحب ورقة</span>
+            <button
+              onClick={handleDrawCard}
+              id="btn-uno-draw-deck"
+              disabled={currentTurn !== 'player' || !!winner}
+              className={`w-20 h-28 rounded-2xl bg-gradient-to-br from-slate-900 via-rose-900 to-indigo-950 border-3 border-white/60 shadow-2xl flex flex-col items-center justify-center transition-all ${
+                currentTurn === 'player'
+                  ? 'hover:scale-105 active:scale-95 ring-2 ring-amber-300 cursor-pointer animate-pulse'
+                  : 'opacity-70 cursor-not-allowed'
+              }`}
+            >
+              <div className="w-12 h-16 rounded-full bg-amber-400 rotate-12 flex items-center justify-center shadow-lg border border-white">
+                <span className="text-slate-950 font-black text-sm italic tracking-tighter">UNO</span>
+              </div>
+              <span className="text-[9px] font-bold text-amber-200 mt-1">{deck.length} ورقة</span>
+            </button>
           </div>
-        </button>
 
-        {/* Center Discard Pile (Top 3D Card) */}
-        {topDiscard && (
-          <div
-            className={`relative w-20 h-28 sm:w-24 sm:h-34 rounded-2xl ${
-              COLOR_MAP[activeColor].bg
-            } border-4 border-white shadow-2xl flex flex-col items-center justify-between p-2 transform rotate-2 transition-transform duration-300`}
-            style={{ transform: 'rotateY(-10deg) translateZ(20px)' }}
-          >
-            {/* Top mini value */}
-            <span className="self-start text-xs font-black text-white">
-              {renderCardValue(topDiscard.value)}
-            </span>
-
-            {/* Center Ellipse with big value */}
-            <div className="w-12 h-14 sm:w-16 sm:h-18 rounded-[50%] bg-white/95 shadow-inner flex items-center justify-center transform -rotate-12">
-              <span
-                className={`text-xl sm:text-2xl font-black ${
-                  COLOR_MAP[activeColor].text
-                }`}
+          {/* Active Discard Pile with Top Card */}
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-[10px] font-black text-slate-300 uppercase tracking-wider">الورقة الحالية</span>
+            {topDiscard && (
+              <div
+                className={`w-20 h-28 rounded-2xl ${COLOR_MAP[activeColor].bg} border-3 border-white shadow-2xl flex flex-col items-center justify-between p-2 transform rotate-2 transition-transform duration-300`}
               >
-                {renderCardValue(topDiscard.value)}
-              </span>
-            </div>
-
-            {/* Bottom mini value */}
-            <span className="self-end text-xs font-black text-white transform rotate-180">
-              {renderCardValue(topDiscard.value)}
-            </span>
+                <span className="text-xs font-black text-white self-start">
+                  {getCardDisplayValue(topDiscard.value)}
+                </span>
+                <div className="w-12 h-16 rounded-full bg-white/90 shadow-inner flex items-center justify-center transform -rotate-12">
+                  <span className="text-xl font-black text-slate-950">
+                    {getCardDisplayValue(topDiscard.value)}
+                  </span>
+                </div>
+                <span className="text-xs font-black text-white self-end">
+                  {getCardDisplayValue(topDiscard.value)}
+                </span>
+              </div>
+            )}
           </div>
-        )}
-
-        {/* Active Color Ring Indicator */}
-        <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-slate-900/90 px-3 py-1 rounded-full border border-slate-700">
-          <div className={`w-3.5 h-3.5 rounded-full ${COLOR_MAP[activeColor].bg}`} />
-          <span className="text-[11px] font-bold text-slate-200">
-            اللون: {t[COLOR_MAP[activeColor].text.split('-')[1] as keyof typeof t] || activeColor}
-          </span>
         </div>
       </div>
 
-      {/* Wild Card Color Chooser Modal */}
+      {/* Player's Fan of Cards Dock */}
+      <div className="w-full flex flex-col items-center gap-2 z-20">
+        {/* Urgent Uno Shout Button when 1 card left */}
+        {playerHand.length === 1 && (
+          <button
+            onClick={() => {
+              sound.playUnoShout();
+              setShoutedUno(true);
+              confetti({ particleCount: 100 });
+              triggerSlam('أونوووووووووو! 📣🎉');
+            }}
+            id="btn-shout-uno"
+            className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 text-white font-black text-sm shadow-2xl border-2 border-white animate-bounce cursor-pointer flex items-center gap-2"
+          >
+            <Bell className="w-5 h-5 fill-current" />
+            <span>صرخة أونووو! (UNO!)</span>
+          </button>
+        )}
+
+        <div className="w-full flex items-center justify-center gap-1.5 overflow-x-auto no-scrollbar py-2 px-3 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 shadow-xl max-w-[420px]">
+          {playerHand.map((card, idx) => {
+            const playable = currentTurn === 'player' && isCardPlayable(card);
+            return (
+              <button
+                key={card.id}
+                id={`card-hand-${card.id}`}
+                onClick={() => handlePlayCard(card)}
+                disabled={!playable}
+                className={`relative w-14 h-22 rounded-xl flex-shrink-0 flex flex-col items-center justify-between p-1.5 transition-all duration-200 select-none border-2 border-white ${
+                  COLOR_MAP[card.color].bg
+                } ${
+                  playable
+                    ? 'hover:-translate-y-3 hover:scale-110 active:scale-95 ring-2 ring-amber-300 cursor-pointer shadow-lg z-30'
+                    : 'opacity-50 grayscale-20 cursor-default'
+                }`}
+                style={{
+                  transform: `rotate(${(idx - playerHand.length / 2) * 3}deg)`,
+                }}
+              >
+                <span className="text-[10px] font-black text-white self-start">
+                  {getCardDisplayValue(card.value)}
+                </span>
+                <div className="w-8 h-11 rounded-full bg-white/90 shadow-inner flex items-center justify-center">
+                  <span className="text-xs font-black text-slate-950">
+                    {getCardDisplayValue(card.value)}
+                  </span>
+                </div>
+                <span className="text-[10px] font-black text-white self-end">
+                  {getCardDisplayValue(card.value)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Wild Color Selection Modal */}
       {showColorPicker && (
-        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-4 z-40 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 p-5 rounded-3xl flex flex-col items-center gap-4 shadow-2xl max-w-xs w-full">
-            <h3 className="text-base font-black text-amber-300">
-              {t.wildSelectColor}
-            </h3>
-            <div className="grid grid-cols-2 gap-3 w-full">
-              {COLORS.map((col) => (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl flex flex-col items-center gap-3">
+            <Sparkles className="w-8 h-8 text-amber-400 animate-spin" />
+            <h3 className="text-base font-black text-white">اختر اللون الجديد للبطاقة:</h3>
+            <div className="grid grid-cols-2 gap-3 w-full mt-2">
+              {(['red', 'blue', 'green', 'yellow'] as UnoColor[]).map((c) => (
                 <button
-                  key={col}
-                  id={`btn-wild-color-${col}`}
-                  onClick={() => pendingWildCard && applyCardPlay(pendingWildCard, col)}
-                  className={`py-3 rounded-2xl ${COLOR_MAP[col].bg} text-white font-black text-sm shadow-lg hover:brightness-110 active:scale-95 cursor-pointer ring-2 ring-white/30`}
+                  key={c}
+                  id={`btn-wild-color-${c}`}
+                  onClick={() => handleSelectWildColor(c)}
+                  className={`py-3 rounded-2xl font-black text-sm text-white ${COLOR_MAP[c].bg} shadow-xl hover:scale-105 active:scale-95 transition-transform cursor-pointer border border-white/60`}
                 >
-                  {t[col as keyof typeof t]}
+                  {t[c as keyof typeof t] || c}
                 </button>
               ))}
             </div>
@@ -436,83 +487,17 @@ export const ThreeUno: React.FC<ThreeUnoProps> = ({
         </div>
       )}
 
-      {/* Player's 3D Hand of Cards */}
-      <div className="w-full flex flex-col items-center gap-2 z-20">
-        <div className="w-full flex items-center justify-center gap-1 sm:gap-2 overflow-x-auto py-3 px-2 no-scrollbar">
-          {playerHand.map((card, idx) => {
-            const playable = currentTurn === 'player' && isCardPlayable(card);
-            return (
-              <button
-                key={card.id}
-                id={`uno-card-${card.id}`}
-                onClick={() => handlePlayCard(card)}
-                disabled={currentTurn !== 'player' || !playable}
-                className={`relative flex-shrink-0 w-12 h-18 sm:w-14 sm:h-22 rounded-xl ${
-                  COLOR_MAP[card.color].bg
-                } border-2 border-white shadow-xl flex flex-col items-center justify-between p-1 transition-all duration-200 transform ${
-                  playable
-                    ? 'hover:-translate-y-4 ring-2 ring-white cursor-pointer shadow-amber-400/40'
-                    : 'opacity-60 cursor-not-allowed'
-                }`}
-                style={{
-                  transform: `rotate(${(idx - playerHand.length / 2) * 3}deg)`,
-                }}
-              >
-                <span className="self-start text-[10px] font-black text-white">
-                  {renderCardValue(card.value)}
-                </span>
-
-                <div className="w-7 h-9 sm:w-9 sm:h-11 rounded-[50%] bg-white/90 shadow-inner flex items-center justify-center transform -rotate-12">
-                  <span
-                    className={`text-xs sm:text-sm font-black ${
-                      COLOR_MAP[card.color].text
-                    }`}
-                  >
-                    {renderCardValue(card.value)}
-                  </span>
-                </div>
-
-                <span className="self-end text-[10px] font-black text-white transform rotate-180">
-                  {renderCardValue(card.value)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action Controls: Uno Shout Button + Feedback Message */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleShoutUno}
-            id="btn-uno-shout"
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 text-white font-black text-sm shadow-xl hover:brightness-110 active:scale-95 cursor-pointer ring-2 ring-amber-300 animate-pulse"
-          >
-            <Bell className="w-4 h-4" />
-            <span>{t.unoShout}</span>
-          </button>
-        </div>
-
-        {gameMessage && (
-          <span className="text-[11px] font-semibold text-amber-300 bg-slate-900/80 px-3 py-0.5 rounded-full border border-amber-500/30">
-            {gameMessage}
-          </span>
-        )}
-      </div>
-
       {/* Winner Modal */}
       {winner && (
         <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-50 animate-fade-in">
           <Trophy className="w-16 h-16 text-amber-400 animate-bounce mb-3" />
           <h2 className="text-2xl font-black text-amber-300 mb-1">
-            {winner === 'player' ? t.winner : 'فاز المنافس!'}
+            {winner === 'player' ? 'ألف مبروك الفوز بأونو! 🏆' : 'فاز المنافس بأونو! 🤖'}
           </h2>
-          <p className="text-sm text-slate-300 mb-4 font-bold">
-            {winner === 'player' ? 'أنهيت جميع كروتك وفزت بالجولة! 🃏' : 'حظ أوفر في الجولة القادمة!'}
-          </p>
           <button
             onClick={startUnoGame}
             id="btn-uno-play-again"
-            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-black text-sm shadow-xl hover:brightness-110 active:scale-95 cursor-pointer"
+            className="mt-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white font-black text-sm shadow-xl hover:brightness-110 active:scale-95 cursor-pointer"
           >
             {t.playAgain}
           </button>
